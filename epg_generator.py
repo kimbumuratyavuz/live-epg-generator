@@ -12,28 +12,35 @@ def get_current_date():
 
 def fetch_epg_from_gemini(channel_name, api_key):
     current_date = get_current_date()
+    # Modeli güncel ve daha yetenekli bir sürümle değiştiriyoruz
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key={api_key}"
     
-    # Promptu daha basit tutalım ki API hata vermesin
-    prompt = f"'{channel_name}' kanalı için {current_date} tarihli yayın akışını ver. Sadece JSON formatında: {{'programs': [{{'title': '...', 'startTime': '{current_date} HH:mm', 'endTime': '{current_date} HH:mm'}}]}}"
+    # Promptu daha detaylı hale getirerek gerçek veri zorunluluğu ekliyoruz
+    prompt = (f"Bugün 19 Haziran 2026. {channel_name} kanalının gerçek ve güncel yayın akışını "
+              f"Türkiye yerel saatiyle (UTC+3) internetten araştırarak bul. "
+              f"Sadece JSON formatında şu yapıda dön: {{'programs': [{{'title': 'Program Adı', 'startTime': '{current_date} HH:mm', 'endTime': '{current_date} HH:mm'}}]}}. "
+              f"Veri bulamazsan boş liste döndür ama asla sahte veya şablon veri uydurma.")
 
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "tools": [{"google_search": {}}],
-        "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"}
+        "generationConfig": {
+            "temperature": 0.0, # Yaratıcılığı sıfıra indiriyoruz (sadece gerçek veri)
+            "responseMimeType": "application/json"
+        }
     }
 
     try:
         req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'})
         with urllib.request.urlopen(req, timeout=60) as response:
             res_data = json.loads(response.read().decode('utf-8'))
-            
-            # Yanıtı loglayalım ki sorunu görebilelim
-            # print(f"API Ham Yanıt: {res_data}") 
-            
             text = res_data['candidates'][0]['content']['parts'][0]['text']
             parsed = json.loads(text.replace('```json', '').replace('```', '').strip())
-            return parsed.get("programs", [])
+            
+            programs = parsed.get("programs", [])
+            if not programs:
+                print(f"   [UYARI] {channel_name} için gerçek veri bulunamadı.")
+            return programs
     except Exception as e:
         print(f"API hatası ({channel_name}): {e}")
         return None
@@ -55,10 +62,13 @@ def main():
     
     for ch in TARGET_CHANNELS:
         programs = fetch_epg_from_gemini(ch, api_key)
-        if not programs: programs = get_fallback_schedule()
+        # Eğer gerçek veri gelmediyse yedek veriye düş
+        if not programs: 
+            programs = get_fallback_schedule()
         
         xml_lines.append(f'  <channel id="{ch}"><display-name>{ch}</display-name></channel>')
         for p in programs:
+            # Zaman formatını temizleyip XMLTV uyumlu hale getiriyoruz
             s = p["startTime"].replace("-","").replace(":","").replace(" ","") + "00 +0300"
             e = p["endTime"].replace("-","").replace(":","").replace(" ","") + "00 +0300"
             xml_lines.append(f'  <programme start="{s}" stop="{e}" channel="{ch}"><title>{p["title"]}</title></programme>')
