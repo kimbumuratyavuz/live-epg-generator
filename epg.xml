@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?><tv>
+  <channel id="TRT 1"><display-name>TRT 1</display-name></channel>
+  <channel id="ATV"><display-name>ATV</display-name></channel>
+  <channel id="STAR TV"><display-name>STAR TV</display-name></channel>
+  <channel id="KANAL D"><display-name>KANAL D</display-name></channel>
+  <channel id="SHOW TV"><display-name>SHOW TV</display-name></channel>
+  <channel id="TV8"><display-name>TV8</display-name></channel>
+  <channel id="NOW"><display-name>NOW</display-name></channel>
+</tv>
