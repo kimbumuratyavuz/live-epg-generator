@@ -3,7 +3,7 @@ name: EPG Güncelleme
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 3 * * *' # Her sabah 03:00'te çalışır
+    - cron: '0 3 * * *'
 
 jobs:
   build:
@@ -15,11 +15,11 @@ jobs:
       - name: Python Kurulumunu Yap
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
       - name: Gerekli kütüphaneleri yükle
         run: |
-          pip install google-generativeai
+          pip install google-genai
 
       - name: Python Scriptini Çalıştır
         env:
