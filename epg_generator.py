@@ -12,68 +12,60 @@ def get_current_date():
 
 def fetch_epg_from_gemini(channel_name, api_key):
     current_date = get_current_date()
-    print(f"-> {channel_name} için {current_date} tarihli akış sorgulanıyor...")
-    
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key={api_key}"
     
-    prompt = (f"Bugün {current_date}. '{channel_name}' kanalının bugünkü yayın akışını "
-              f"Türkiye saatiyle (UTC+3) bul. Cevabını SADECE ve SADECE şu formatta JSON ver: "
-              f"{{ 'programs': [ {{ 'title': 'Program Adı', 'startTime': '{current_date} HH:mm', 'endTime': '{current_date} HH:mm' }} ] }}. "
-              f"Başka hiçbir açıklama yapma.")
+    # Promptu daha basit tutalım ki API hata vermesin
+    prompt = f"'{channel_name}' kanalı için {current_date} tarihli yayın akışını ver. Sadece JSON formatında: {{'programs': [{{'title': '...', 'startTime': '{current_date} HH:mm', 'endTime': '{current_date} HH:mm'}}]}}"
 
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "tools": [{"google_search": {}}],
-        "generationConfig": {
-            "temperature": 0.05,
-            "responseMimeType": "application/json"
-        }
+        "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"}
     }
 
     try:
         req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'})
         with urllib.request.urlopen(req, timeout=60) as response:
             res_data = json.loads(response.read().decode('utf-8'))
-            text_response = res_data['candidates'][0]['content']['parts'][0]['text']
-            clean_json = text_response.replace('```json', '').replace('```', '').strip()
-            parsed_data = json.loads(clean_json)
-            return parsed_data.get("programs", [])
+            
+            # Yanıtı loglayalım ki sorunu görebilelim
+            # print(f"API Ham Yanıt: {res_data}") 
+            
+            text = res_data['candidates'][0]['content']['parts'][0]['text']
+            parsed = json.loads(text.replace('```json', '').replace('```', '').strip())
+            return parsed.get("programs", [])
     except Exception as e:
-        print(f"   [HATA] {channel_name} API hatası: {e}")
-        return None # Hata durumunda None dön
+        print(f"API hatası ({channel_name}): {e}")
+        return None
 
 def get_fallback_schedule():
     d = get_current_date()
     return [
-        {"title": "Sabah Kuşağı", "startTime": f"{d} 07:00", "endTime": f"{d} 12:00"},
-        {"title": "Gündüz Programı", "startTime": f"{d} 12:00", "endTime": f"{d} 18:00"},
+        {"title": "Güne Başlarken", "startTime": f"{d} 07:00", "endTime": f"{d} 12:00"},
+        {"title": "Gündüz Kuşağı", "startTime": f"{d} 12:00", "endTime": f"{d} 18:00"},
         {"title": "Ana Haber", "startTime": f"{d} 19:00", "endTime": f"{d} 20:00"},
-        {"title": "Akşam Kuşağı", "startTime": f"{d} 20:00", "endTime": f"{d} 23:59"}
+        {"title": "Prime Time", "startTime": f"{d} 20:00", "endTime": f"{d} 23:59"}
     ]
 
 def main():
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key: return
 
-    xml_content = '<?xml version="1.0" encoding="UTF-8"?><tv>\n'
+    xml_lines = ['<?xml version="1.0" encoding="UTF-8"?><tv>']
     
     for ch in TARGET_CHANNELS:
         programs = fetch_epg_from_gemini(ch, api_key)
+        if not programs: programs = get_fallback_schedule()
         
-        # Eğer None dönerse veya boşsa yedek veriyi kullan
-        if not programs:
-            print(f"   ! {ch} için yedek veriye geçiliyor.")
-            programs = get_fallback_schedule()
-        
-        xml_content += f'  <channel id="{ch}"><display-name>{ch}</display-name></channel>\n'
+        xml_lines.append(f'  <channel id="{ch}"><display-name>{ch}</display-name></channel>')
         for p in programs:
-            s = p["startTime"].replace("-","").replace(":","").replace(" ","")
-            e = p["endTime"].replace("-","").replace(":","").replace(" ","")
-            xml_content += f'  <programme start="{s}00 +0300" stop="{e}00 +0300" channel="{ch}"><title>{p["title"]}</title></programme>\n'
+            s = p["startTime"].replace("-","").replace(":","").replace(" ","") + "00 +0300"
+            e = p["endTime"].replace("-","").replace(":","").replace(" ","") + "00 +0300"
+            xml_lines.append(f'  <programme start="{s}" stop="{e}" channel="{ch}"><title>{p["title"]}</title></programme>')
     
-    xml_content += '</tv>'
+    xml_lines.append('</tv>')
     with open("epg.xml", "w", encoding="utf-8") as f:
-        f.write(xml_content)
+        f.write("\n".join(xml_lines))
 
 if __name__ == "__main__":
     main()
