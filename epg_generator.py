@@ -1,49 +1,52 @@
 import os
-import sys
+import json
 import google.generativeai as genai
+from datetime import datetime
 
-def setup_gemini():
-    """
-    GitHub Secrets'tan gelen API anahtarını ortam değişkeninden alır
-    ve Gemini istemcisini yapılandırır.
-    """
-    # GitHub Actions'da env olarak tanımlanan değişkeni çekiyoruz
-    api_key = os.environ.get("GEMINI_API_KEY")
+# API Ayarları
+api_key = os.environ.get("GEMINI_API_KEY")
+genai.configure(api_key=api_key)
 
-    if not api_key:
-        print("HATA: GEMINI_API_KEY ortam değişkeni bulunamadı.")
-        print("Lütfen GitHub Actions workflow dosyanızda 'env' kısmında tanımladığınızdan emin olun.")
-        sys.exit(1)
+TARGET_CHANNELS = ["TRT 1", "ATV", "STAR TV", "KANAL D", "SHOW TV", "TV8", "NOW"]
 
-    try:
-        # API anahtarını yapılandır
-        genai.configure(api_key=api_key)
-        
-        # Model tanımlaması
-        model = genai.GenerativeModel('gemini-2.5-flash-preview-09-2025')
-        return model
-    except Exception as e:
-        print(f"HATA: API yapılandırması sırasında bir sorun oluştu: {e}")
-        sys.exit(1)
-
-def generate_content(prompt):
-    """
-    Verilen prompt ile içerik üretir.
-    """
-    model = setup_gemini()
+def get_epg_from_gemini(channel):
+    # Google Arama yetkili model
+    model = genai.GenerativeModel(
+        model_name='gemini-1.5-flash',
+        tools=[{"google_search": {}}]
+    )
+    
+    prompt = (f"Bugün {datetime.now().strftime('%Y-%m-%d')}. "
+              f"'{channel}' kanalının bugün için güncel yayın akışını bul. "
+              f"Veriyi şu JSON formatında ver: {{'programs': [{{'title': 'Program', 'startTime': 'HH:mm', 'endTime': 'HH:mm'}}]}} "
+              f"HİÇBİR açıklama yapma. Eğer güncel veri bulamazsan boş liste [] dön.")
     
     try:
         response = model.generate_content(prompt)
-        # Hata kontrolü (Safety settings veya içerik kısıtlamaları için)
-        if response.text:
-            return response.text
-        else:
-            return "İçerik üretilemedi veya boş döndü."
+        # Markdown etiketlerini temizle
+        text = response.text.replace('```json', '').replace('```', '').strip()
+        return json.loads(text).get("programs", [])
     except Exception as e:
-        return f"Gemini API hatası: {e}"
+        print(f"Hata ({channel}): {e}")
+        return []
+
+def main():
+    xml_content = '<?xml version="1.0" encoding="UTF-8"?><tv>\n'
+    
+    for ch in TARGET_CHANNELS:
+        programs = get_epg_from_gemini(ch)
+        
+        xml_content += f'  <channel id="{ch}"><display-name>{ch}</display-name></channel>\n'
+        for p in programs:
+            date_str = datetime.now().strftime("%Y%m%d")
+            s = p["startTime"].replace(":","") + "00 +0300"
+            e = p["endTime"].replace(":","") + "00 +0300"
+            xml_content += f'  <programme start="{date_str}{s}" stop="{date_str}{e}" channel="{ch}"><title>{p["title"]}</title></programme>\n'
+    
+    xml_content += '</tv>'
+    
+    with open("epg.xml", "w", encoding="utf-8") as f:
+        f.write(xml_content)
 
 if __name__ == "__main__":
-    # Test amaçlı basit bir prompt
-    test_prompt = "Merhaba, GitHub Actions üzerinden başarıyla çalıştığını onayla."
-    result = generate_content(test_prompt)
-    print("Sonuç:", result)
+    main()
